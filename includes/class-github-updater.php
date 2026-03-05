@@ -4,6 +4,10 @@
  *
  * Hooks into WordPress's update system so sites running this plugin
  * receive update notices whenever a new GitHub release is published.
+ *
+ * Also adds plugin-row action links for:
+ *   - "Check for Update"  — forces an immediate update check.
+ *   - "Uninstall Plugin"  — wipes all settings/transients/cron then deletes plugin files.
  */
 
 declare(strict_types=1);
@@ -18,6 +22,32 @@ final class GithubUpdater {
 	private const CACHE_KEY   = 'ghl_sync_github_release';
 	private const CACHE_TTL   = 12 * HOUR_IN_SECONDS;
 
+	/** Every option key the plugin stores — kept in one place for uninstall. */
+	private const ALL_OPTIONS = [
+		'ghl_sync_token',
+		'ghl_sync_location_id',
+		'ghl_sync_schema_key',
+		'ghl_sync_cron_schedule',
+		'ghl_sync_batch_size',
+		'ghl_sync_debug',
+		'ghl_sync_publisher_id',
+		'ghl_sync_taxonomy_slug',
+		'ghl_sync_delete_missing',
+		'ghl_sync_obey_changes',
+		'ghl_sync_exclude_draft',
+		'ghl_sync_delete_on_draft',
+		'ghl_sync_field_map',
+		'ghl_sync_last_log',
+		'ghl_back_sync_last_log',
+		'ghl_seo_override_enabled',
+		'ghl_seo_title_pattern',
+		'ghl_seo_desc_pattern',
+		'ghl_seo_img_name_pattern',
+		'ghl_seo_img_alt_pattern',
+		'ghl_seo_img_title_pattern',
+		'ghl_seo_auto_fill_keywords',
+	];
+
 	private string $slug;
 	private string $plugin_file;
 	private string $version;
@@ -29,10 +59,132 @@ final class GithubUpdater {
 	}
 
 	public function register(): void {
-		add_filter( 'pre_set_site_transient_update_plugins', [ $this, 'inject_update'   ]        );
-		add_filter( 'plugins_api',                           [ $this, 'plugin_info'     ], 10, 3 );
-		add_filter( 'upgrader_source_selection',             [ $this, 'fix_source_dir'  ], 10, 4 );
-		add_action( 'upgrader_process_complete',             [ $this, 'purge_cache'     ], 10, 2 );
+		// Auto-update hooks.
+		add_filter( 'pre_set_site_transient_update_plugins', [ $this, 'inject_update'  ]        );
+		add_filter( 'plugins_api',                           [ $this, 'plugin_info'    ], 10, 3 );
+		add_filter( 'upgrader_source_selection',             [ $this, 'fix_source_dir' ], 10, 4 );
+		add_action( 'upgrader_process_complete',             [ $this, 'purge_cache'    ], 10, 2 );
+
+		// Plugin-row action links.
+		add_filter( 'plugin_action_links_' . $this->slug, [ $this, 'add_action_links' ] );
+
+		// Admin action handlers (fire when admin.php?action=... is requested).
+		add_action( 'admin_action_ghl_check_update',     [ $this, 'handle_check_update' ] );
+		add_action( 'admin_action_ghl_uninstall_plugin', [ $this, 'handle_uninstall'    ] );
+
+		// Success notice after "Check for Update".
+		add_action( 'admin_notices', [ $this, 'maybe_show_notices' ] );
+	}
+
+	// ── Plugin-row links ───────────────────────────────────────────────────────
+
+	public function add_action_links( array $links ): array {
+		$check_url = wp_nonce_url(
+			admin_url( 'admin.php?action=ghl_check_update' ),
+			'ghl_check_update'
+		);
+
+		$uninstall_url = wp_nonce_url(
+			admin_url( 'admin.php?action=ghl_uninstall_plugin' ),
+			'ghl_uninstall_plugin'
+		);
+
+		$confirm_msg = esc_js(
+			__( 'This will permanently delete ALL plugin settings and remove the plugin files. Showcase posts in WordPress will NOT be deleted. This cannot be undone — continue?', 'ghl-showcase-sync' )
+		);
+
+		array_unshift(
+			$links,
+			sprintf(
+				'<a href="%s">%s</a>',
+				esc_url( $check_url ),
+				esc_html__( 'Check for Update', 'ghl-showcase-sync' )
+			)
+		);
+
+		$links[] = sprintf(
+			'<a href="%s" style="color:#b32d2e;font-weight:600;" onclick="return confirm(\'%s\')">%s</a>',
+			esc_url( $uninstall_url ),
+			$confirm_msg,
+			esc_html__( 'Uninstall Plugin', 'ghl-showcase-sync' )
+		);
+
+		return $links;
+	}
+
+	// ── "Check for Update" handler ─────────────────────────────────────────────
+
+	public function handle_check_update(): void {
+		if ( ! current_user_can( 'update_plugins' ) ) {
+			wp_die( esc_html__( 'Permission denied.', 'ghl-showcase-sync' ) );
+		}
+		check_admin_referer( 'ghl_check_update' );
+
+		// Clear our release cache so the next check hits GitHub fresh.
+		delete_transient( self::CACHE_KEY );
+
+		// Force WordPress to re-check all plugin updates on next load.
+		delete_site_transient( 'update_plugins' );
+
+		wp_safe_redirect( admin_url( 'plugins.php?ghl_update_checked=1' ) );
+		exit;
+	}
+
+	// ── "Uninstall Plugin" handler ─────────────────────────────────────────────
+
+	public function handle_uninstall(): void {
+		if ( ! current_user_can( 'delete_plugins' ) ) {
+			wp_die( esc_html__( 'Permission denied.', 'ghl-showcase-sync' ) );
+		}
+		check_admin_referer( 'ghl_uninstall_plugin' );
+
+		self::wipe_plugin_data();
+
+		// Deactivate first (required before deletion).
+		deactivate_plugins( $this->slug );
+
+		// Load WP's plugin/file helpers if not already present.
+		require_once ABSPATH . 'wp-admin/includes/plugin.php';
+		require_once ABSPATH . 'wp-admin/includes/file.php';
+
+		delete_plugins( [ $this->slug ] );
+
+		wp_safe_redirect( admin_url( 'plugins.php?ghl_uninstalled=1' ) );
+		exit;
+	}
+
+	// ── Admin notices ──────────────────────────────────────────────────────────
+
+	public function maybe_show_notices(): void {
+		$screen = get_current_screen();
+		if ( ! $screen || 'plugins' !== $screen->id ) {
+			return;
+		}
+
+		if ( ! empty( $_GET['ghl_update_checked'] ) ) {
+			echo '<div class="notice notice-success is-dismissible"><p>'
+				. esc_html__( 'LaunchLocal Showcase Sync: update cache cleared. WordPress will re-check for updates now.', 'ghl-showcase-sync' )
+				. '</p></div>';
+		}
+
+		if ( ! empty( $_GET['ghl_uninstalled'] ) ) {
+			echo '<div class="notice notice-success is-dismissible"><p>'
+				. esc_html__( 'LaunchLocal Showcase Sync has been uninstalled and all plugin data has been removed.', 'ghl-showcase-sync' )
+				. '</p></div>';
+		}
+	}
+
+	// ── Data wipe (shared with uninstall.php) ──────────────────────────────────
+
+	public static function wipe_plugin_data(): void {
+		foreach ( self::ALL_OPTIONS as $option ) {
+			delete_option( $option );
+		}
+
+		delete_transient( 'ghl_connection_verified' );
+		delete_transient( self::CACHE_KEY );
+
+		wp_clear_scheduled_hook( 'ghl_scheduled_sync' );
 	}
 
 	// ── Update transient injection ─────────────────────────────────────────────
@@ -58,7 +210,6 @@ final class GithubUpdater {
 				'package'     => $release['zipball_url'],
 			];
 		} else {
-			// Let WP know the plugin is up to date.
 			$transient->no_update[ $this->slug ] = (object) [
 				'slug'        => dirname( $this->slug ),
 				'plugin'      => $this->slug,
