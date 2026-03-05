@@ -1,0 +1,16 @@
+# WordPress
+wp-config.php
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# Build artifacts
+*.zip
+node_modules/
