@@ -82,7 +82,12 @@
     var pendingPerPage = 20;
 
     function renderPendingTable(data) {
-        pendingData = data.items || [];
+        // Only show backlog items that originated from LaunchLocal (orphaned GHL records).
+        // Pure WordPress-created backlog posts belong on the Back-Sync tab only.
+        var allItems = data.items || [];
+        pendingData = allItems.filter(function (item) {
+            return !(item.status === 'backlog' && item.origin !== 'ghl');
+        });
         pendingPage = 1;
         $('#pending-loading, #pending-empty, #pending-placeholder').hide();
         if (!pendingData.length) { $('#pending-empty').show(); return; }
@@ -92,7 +97,9 @@
         $('#stat-needs-update').text(data.needs_update || 0);
         $('#stat-synced').text(data.synced || 0);
         $('#stat-drafted').text(data.drafted || 0);
-        $('#stat-backlog').text(data.backlog || 0);
+        // Backlog stat: only GHL-origin orphaned records (matching what's in the table).
+        var ghlBacklog = allItems.filter(function(i){ return i.status === 'backlog' && i.origin === 'ghl'; }).length;
+        $('#stat-backlog').text(ghlBacklog);
         renderPendingPage();
         $('#pending-table-wrap').show();
     }

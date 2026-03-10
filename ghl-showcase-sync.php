@@ -3,7 +3,7 @@
  * Plugin Name:  LaunchLocal Showcase Sync
  * Plugin URI:   https://launchlocal.io
  * Description:  Syncs LaunchLocal Custom Object (Showcase) records to WordPress with SEO optimisation, taxonomy support, and two-way sync.
- * Version:      4.4.0
+ * Version:      4.5.0
  * Author:       LaunchLocal
  * Author URI:   https://launchlocal.io
  * Text Domain:  ghl-showcase-sync
@@ -17,7 +17,7 @@ namespace GHL\ShowcaseSync;
 
 if ( ! defined( 'ABSPATH' ) ) { exit; }
 
-define( 'GHL_SYNC_VERSION', '4.4.0' );
+define( 'GHL_SYNC_VERSION', '4.5.0' );
 define( 'GHL_SYNC_PATH',    plugin_dir_path( __FILE__ ) );
 define( 'GHL_SYNC_URL',     plugin_dir_url( __FILE__ ) );
 define( 'GHL_SYNC_SLUG',    'ghl-showcase-sync' );
@@ -83,6 +83,10 @@ final class Plugin {
 		// One-time origin migration — stamps _ghl_origin on existing untagged posts.
 		add_action( 'init', [ SyncEngine::class, 'maybe_migrate_origins' ] );
 
+		// Self-healing cron: reschedule if the event was cleared without deactivation.
+		// Runs on admin_init only — cheap option-cache read, no frontend overhead.
+		add_action( 'init', [ CronManager::class, 'maybe_reschedule' ] );
+
 		register_activation_hook(   __FILE__, [ CronManager::class, 'activate'   ] );
 		register_deactivation_hook( __FILE__, [ CronManager::class, 'deactivate' ] );
 	}
@@ -112,7 +116,7 @@ final class Plugin {
 		$this->verify_ajax_request();
 		$batch_size = (int) ( $_POST['batch_size'] ?? 0 );
 		$offset     = (int) ( $_POST['offset']     ?? 0 );
-		if ( ! ini_get( 'safe_mode' ) ) { set_time_limit( 300 ); }
+		@set_time_limit( 300 ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged
 		$result = SyncEngine::run( $batch_size, $offset );
 		is_wp_error( $result )
 			? wp_send_json_error( [ 'message' => $result->get_error_message() ] )
@@ -150,7 +154,7 @@ final class Plugin {
 
 	public function ajax_run_back_sync(): void {
 		$this->verify_ajax_request();
-		if ( ! ini_get( 'safe_mode' ) ) { set_time_limit( 120 ); }
+		@set_time_limit( 120 ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged
 		// batch_size from request, fallback to global setting, fallback to 5.
 		$batch_size_post    = isset( $_POST['batch_size'] ) ? (int) $_POST['batch_size'] : -1;
 		$batch_size_setting = (int) get_option( 'ghl_sync_batch_size', 0 );

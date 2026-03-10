@@ -326,9 +326,8 @@ class BackSyncEngine {
 					break;
 
 				case 'taxonomy':
-					// Read taxonomy terms from WP and push as array of term names.
-					$tax_slug = (string) get_option( 'ghl_sync_taxonomy_slug', 'category' );
-					$terms    = get_the_terms( $post->ID, $tax_slug );
+					// The wp_key is the taxonomy slug (e.g. 'showcase-category').
+					$terms = get_the_terms( $post->ID, $wp_key );
 					if ( $terms && ! is_wp_error( $terms ) ) {
 						$props[ $ghl_key ] = array_map( fn( $t ) => $t->name, $terms );
 					}

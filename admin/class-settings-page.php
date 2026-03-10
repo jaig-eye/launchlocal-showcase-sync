@@ -67,7 +67,7 @@ class SettingsPage {
 		$opts = [
 			'ghl_sync_token', 'ghl_sync_location_id', 'ghl_sync_schema_key',
 			'ghl_sync_cron_schedule', 'ghl_sync_batch_size', 'ghl_sync_debug',
-			'ghl_sync_publisher_id', 'ghl_sync_taxonomy_slug', 'ghl_sync_delete_missing',
+			'ghl_sync_publisher_id', 'ghl_sync_delete_missing',
 			'ghl_sync_obey_changes', 'ghl_sync_exclude_draft', 'ghl_sync_delete_on_draft',
 			SeoEngine::OPT_SEO_OVERRIDE,
 			SeoEngine::OPT_TITLE_PATTERN, SeoEngine::OPT_DESC_PATTERN,
@@ -96,7 +96,6 @@ class SettingsPage {
 		update_option( 'ghl_sync_batch_size',    absint( $_POST['ghl_sync_batch_size'] ?? 0 ) );
 		update_option( 'ghl_sync_debug',         isset( $_POST['ghl_sync_debug'] ) ? 1 : 0 );
 		update_option( 'ghl_sync_publisher_id',  absint( $_POST['ghl_sync_publisher_id'] ?? 0 ) );
-		update_option( 'ghl_sync_taxonomy_slug', sanitize_key( wp_unslash( $_POST['ghl_sync_taxonomy_slug'] ?? '' ) ) );
 		update_option( 'ghl_sync_delete_missing', isset( $_POST['ghl_sync_delete_missing'] ) ? 1 : 0 );
 
 		$obey = sanitize_key( wp_unslash( $_POST['ghl_sync_obey_changes'] ?? 'launchlocal' ) );
@@ -134,7 +133,6 @@ class SettingsPage {
 		$batch_size  = (int)    get_option( 'ghl_sync_batch_size', 0 );
 		$debug_on    = (bool)   get_option( 'ghl_sync_debug', 0 );
 		$publisher_id= (int)    get_option( 'ghl_sync_publisher_id', 0 );
-		$tax_slug    = (string) get_option( 'ghl_sync_taxonomy_slug', '' );
 		$delete_missing  = (bool)   get_option( 'ghl_sync_delete_missing',  0 );
 		$obey_changes    = (string) get_option( 'ghl_sync_obey_changes',    'launchlocal' );
 		$exclude_draft   = (bool)   get_option( 'ghl_sync_exclude_draft',   1 );
@@ -293,7 +291,7 @@ class SettingsPage {
 							<div class="ghl-stat"><span class="ghl-stat__num ghl-text--orange" id="stat-needs-update">&mdash;</span><span class="ghl-stat__label">Needs Update</span></div>
 							<div class="ghl-stat"><span class="ghl-stat__num ghl-text--green"  id="stat-synced">&mdash;</span><span class="ghl-stat__label">Synced</span></div>
 							<div class="ghl-stat"><span class="ghl-stat__num ghl-text--muted"  id="stat-drafted">&mdash;</span><span class="ghl-stat__label">Drafted</span></div>
-							<div class="ghl-stat"><span class="ghl-stat__num ghl-text--purple" id="stat-backlog">&mdash;</span><span class="ghl-stat__label">WP Backlog</span></div>
+							<div class="ghl-stat"><span class="ghl-stat__num ghl-text--purple" id="stat-backlog">&mdash;</span><span class="ghl-stat__label">GHL Orphans</span></div>
 						</div>
 						<div id="pending-table-wrap" style="display:none;" class="ghl-table-wrap">
 							<table class="ghl-table">
@@ -397,6 +395,15 @@ class SettingsPage {
 			?>
 			<div class="ghl-layout">
 				<div class="ghl-layout__main">
+
+					<div class="ghl-notice ghl-notice--alert" style="display:flex;gap:12px;align-items:flex-start;margin-bottom:2px;border-radius:10px;">
+						<svg viewBox="0 0 20 20" fill="currentColor" style="flex-shrink:0;width:18px;height:18px;margin-top:1px;"><path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/></svg>
+						<div>
+							<strong><?php esc_html_e( 'Images are not pushed to LaunchLocal.', 'ghl-showcase-sync' ); ?></strong>
+							<?php esc_html_e( ' Only title, content, and mapped text/meta fields sync in this direction. If you later edit a back-synced post inside LaunchLocal, any images will need to be uploaded there manually.', 'ghl-showcase-sync' ); ?>
+							<br><em style="font-size:12px;opacity:.75;"><?php esc_html_e( 'Back-sync is optional — only run it if you need to edit these showcases directly in LaunchLocal.', 'ghl-showcase-sync' ); ?></em>
+						</div>
+					</div>
 
 					<div class="ghl-card">
 						<div class="ghl-card__header">
@@ -593,15 +600,6 @@ class SettingsPage {
 								</div>
 							</div>
 
-							<!-- Taxonomy mapping -->
-							<div class="ghl-field">
-								<label class="ghl-field__label" for="ghl_sync_taxonomy_slug"><?php esc_html_e( 'Category Taxonomy Slug', 'ghl-showcase-sync' ); ?></label>
-								<input type="text" id="ghl_sync_taxonomy_slug" name="ghl_sync_taxonomy_slug" value="<?php echo esc_attr( $tax_slug ); ?>" class="ghl-input ghl-input--mono" placeholder="category" spellcheck="false">
-								<p class="ghl-field__help"><?php esc_html_e( 'The WordPress taxonomy slug used for the "taxonomy" field type. Default: category. Change this if your WP install uses a different taxonomy name.', 'ghl-showcase-sync' ); ?></p>
-							</div>
-
-							<div class="ghl-divider"></div>
-
 							<div class="ghl-field">
 								<label class="ghl-field__label" style="display:flex;align-items:center;gap:10px;cursor:pointer;">
 									<input type="checkbox" id="ghl_sync_debug" name="ghl_sync_debug" value="1" <?php checked( $debug_on ); ?> style="width:18px;height:18px;">
@@ -708,7 +706,6 @@ class SettingsPage {
 							<input type="hidden" name="ghl_sync_batch_size" value="<?php echo esc_attr( $batch_size ); ?>">
 							<input type="hidden" name="ghl_sync_cron_schedule" value="<?php echo esc_attr( $cron_sched ); ?>">
 							<input type="hidden" name="ghl_sync_publisher_id" value="<?php echo esc_attr( $publisher_id ); ?>">
-							<input type="hidden" name="ghl_sync_taxonomy_slug" value="<?php echo esc_attr( $tax_slug ); ?>">
 							<?php if ( $debug_on ) : ?><input type="hidden" name="ghl_sync_debug" value="1"><?php endif; ?>
 							<?php if ( $delete_missing ) : ?><input type="hidden" name="ghl_sync_delete_missing" value="1"><?php endif; ?>
 							<input type="hidden" name="ghl_sync_obey_changes" value="<?php echo esc_attr( $obey_changes ); ?>">

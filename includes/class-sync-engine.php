@@ -27,14 +27,13 @@ class SyncEngine {
 
 	public static function get_default_field_map(): array {
 		return [
-			[ 'ghl' => 'title',                  'wp' => 'post_title',       'type' => 'post'          ],
-			[ 'ghl' => 'showcase_description',   'wp' => 'post_content',     'type' => 'post'          ],
-			[ 'ghl' => 'showcase_description',   'wp' => 'description',      'type' => 'meta'          ],
-			[ 'ghl' => 'showcase_address',       'wp' => 'address_location', 'type' => 'meta'          ],
-			[ 'ghl' => 'showcase_customer',      'wp' => 'customer',         'type' => 'meta'          ],
-			[ 'ghl' => 'featured_image',         'wp' => '_thumbnail',       'type' => 'image_single'  ],
-			[ 'ghl' => 'showcase_image_gallery', 'wp' => 'images',           'type' => 'image_gallery' ],
-			[ 'ghl' => 'showcase_category',      'wp' => 'category',         'type' => 'taxonomy'      ],
+			[ 'ghl' => 'title',                  'wp' => 'post_title',        'type' => 'post'          ],
+			[ 'ghl' => 'showcase_description',   'wp' => 'description',       'type' => 'meta'          ],
+			[ 'ghl' => 'showcase_address',       'wp' => 'address_location',  'type' => 'meta'          ],
+			[ 'ghl' => 'showcase_customer',      'wp' => 'customer',          'type' => 'meta'          ],
+			[ 'ghl' => 'featured_image',         'wp' => '_thumbnail',        'type' => 'image_single'  ],
+			[ 'ghl' => 'showcase_image_gallery', 'wp' => 'images',            'type' => 'image_gallery' ],
+			[ 'ghl' => 'showcase_category',      'wp' => 'showcase-category', 'type' => 'taxonomy'      ],
 		];
 	}
 
@@ -686,8 +685,29 @@ class SyncEngine {
 	// ── Taxonomy ──────────────────────────────────────────────────────────────
 
 	private static function resolve_taxonomy_slug( string $wp_key ): string {
-		$override = (string) get_option( 'ghl_sync_taxonomy_slug', '' );
-		return $override ?: $wp_key;
+		// The WP field key in the field map IS the taxonomy slug (e.g. 'showcase-category').
+		return $wp_key;
+	}
+
+	/**
+	 * Normalise a GHL category slug/key to a WP-compatible slug.
+	 *
+	 * GHL stores slugs with underscores; WordPress uses dashes.
+	 * A `&` in a category name can produce double-underscores in GHL
+	 * (e.g. "Bed Covers & Tonneau Toppers" → "bed_covers__tonneau_toppers").
+	 *
+	 * Strategy:
+	 *   1. Replace every run of one-or-more underscores with a single dash.
+	 *   2. Strip any leading/trailing dashes left by the substitution.
+	 *
+	 * Examples:
+	 *   bed_covers_tonneau_toppers  → bed-covers-tonneau-toppers  ✓
+	 *   bed_covers__tonneau_toppers → bed-covers-tonneau-toppers  ✓
+	 *   residential                 → residential                 ✓
+	 */
+	private static function ghl_slug_to_wp( string $ghl_slug ): string {
+		$slug = preg_replace( '/_+/', '-', $ghl_slug ) ?? $ghl_slug;
+		return trim( $slug, '-' );
 	}
 
 	private static function sync_taxonomy( int $post_id, mixed $value, string $tax_slug ): void {
@@ -705,12 +725,24 @@ class SyncEngine {
 		$term_ids = [];
 		foreach ( $names as $name ) {
 			$name = sanitize_text_field( $name );
-			// Case-insensitive lookup: find existing term ignoring case.
+
+			// 1. Exact name match (case-insensitive via MySQL collation).
 			$term = get_term_by( 'name', $name, $tax_slug );
+
 			if ( ! $term ) {
-				// Try a slugified lookup too (handles 'commercial' vs 'Commercial').
+				// 2. WP slug derived from the display name.
 				$term = get_term_by( 'slug', sanitize_title( $name ), $tax_slug );
 			}
+
+			if ( ! $term ) {
+				// 3. GHL slug normalisation: underscores → dashes, collapse doubles.
+				//    Handles "bed_covers__tonneau_toppers" → "bed-covers-tonneau-toppers".
+				$wp_slug = self::ghl_slug_to_wp( sanitize_title( $name ) );
+				if ( $wp_slug !== sanitize_title( $name ) ) {
+					$term = get_term_by( 'slug', $wp_slug, $tax_slug );
+				}
+			}
+
 			if ( ! $term ) {
 				$result = wp_insert_term( $name, $tax_slug );
 				if ( is_wp_error( $result ) ) continue;

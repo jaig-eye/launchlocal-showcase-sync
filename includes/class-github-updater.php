@@ -79,6 +79,8 @@ final class GithubUpdater {
 	// ── Plugin-row links ───────────────────────────────────────────────────────
 
 	public function add_action_links( array $links ): array {
+		$settings_url = admin_url( 'admin.php?page=ghl-showcase-sync' );
+
 		$check_url = wp_nonce_url(
 			admin_url( 'admin.php?action=ghl_check_update' ),
 			'ghl_check_update'
@@ -91,6 +93,15 @@ final class GithubUpdater {
 
 		$confirm_msg = esc_js(
 			__( 'This will permanently delete ALL plugin settings and remove the plugin files. Showcase posts in WordPress will NOT be deleted. This cannot be undone — continue?', 'ghl-showcase-sync' )
+		);
+
+		array_unshift(
+			$links,
+			sprintf(
+				'<a href="%s" style="font-weight:600;">%s</a>',
+				esc_url( $settings_url ),
+				esc_html__( 'Settings', 'ghl-showcase-sync' )
+			)
 		);
 
 		array_unshift(

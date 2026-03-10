@@ -26,36 +26,8 @@ class PostType {
 	private function __construct() {}
 
 	public function register(): void {
-		add_action( 'init', [ $this, 'register_post_type' ] );
-	}
-
-	public function register_post_type(): void {
-		register_post_type(
-			self::POST_TYPE,
-			[
-				'labels'       => [
-					'name'               => _x( 'Showcases', 'post type general name', 'ghl-showcase-sync' ),
-					'singular_name'      => _x( 'Showcase', 'post type singular name', 'ghl-showcase-sync' ),
-					'add_new_item'       => __( 'Add New Showcase', 'ghl-showcase-sync' ),
-					'edit_item'          => __( 'Edit Showcase', 'ghl-showcase-sync' ),
-					'new_item'           => __( 'New Showcase', 'ghl-showcase-sync' ),
-					'view_item'          => __( 'View Showcase', 'ghl-showcase-sync' ),
-					'search_items'       => __( 'Search Showcases', 'ghl-showcase-sync' ),
-					'not_found'          => __( 'No showcases found.', 'ghl-showcase-sync' ),
-					'not_found_in_trash' => __( 'No showcases found in Trash.', 'ghl-showcase-sync' ),
-					'menu_name'          => __( 'Showcases', 'ghl-showcase-sync' ),
-				],
-				'public'              => true,
-				'has_archive'         => true,
-				'rewrite'             => [ 'slug' => 'showcases' ],
-				'supports'            => [ 'title', 'editor', 'thumbnail', 'excerpt', 'custom-fields' ],
-				'show_in_rest'        => true,
-				'menu_icon'           => 'dashicons-star-filled',
-				'capability_type'     => 'post',
-				'hierarchical'        => false,
-				'exclude_from_search' => false,
-			]
-		);
+		// The 'showcase' CPT is managed by MetaBox — no registration here.
+		// This hook intentionally left empty to avoid overwriting CPT args or icon.
 	}
 
 	/**

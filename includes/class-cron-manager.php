@@ -22,6 +22,21 @@ class CronManager {
 		}
 	}
 
+	/**
+	 * Self-healing: if a cron schedule is configured but the event is not queued
+	 * (cleared by WP updates, site migrations, etc.), reschedule it automatically.
+	 * Hooked to 'init' so it fires on every request without user interaction.
+	 */
+	public static function maybe_reschedule(): void {
+		$interval = (string) get_option( self::SCHEDULE_OPT, '' );
+		if ( empty( $interval ) ) {
+			return; // no schedule configured — nothing to do
+		}
+		if ( ! wp_next_scheduled( self::CRON_HOOK ) ) {
+			wp_schedule_event( time(), $interval, self::CRON_HOOK );
+		}
+	}
+
 	/** Called on plugin deactivation. */
 	public static function deactivate(): void {
 		self::unschedule();

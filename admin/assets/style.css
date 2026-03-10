@@ -1188,6 +1188,8 @@
 /* Notice colors */
 .ghl-notice--warn   { background: #fffbeb; border-color: #fbbf24; color: #92400e; }
 .ghl-notice--warn svg { color: #f59e0b; }
+.ghl-notice--alert  { background: #fff1f2; border-color: #fca5a5; color: #9b1c1c; }
+.ghl-notice--alert svg { color: #ef4444; flex-shrink: 0; }
 
 /* Pagination */
 .ghl-pagination { padding: 8px 20px 16px; display: flex; gap: 4px; }
