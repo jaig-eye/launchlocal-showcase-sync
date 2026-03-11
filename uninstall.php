@@ -18,7 +18,6 @@ $options = [
 	'ghl_sync_batch_size',
 	'ghl_sync_debug',
 	'ghl_sync_publisher_id',
-	'ghl_sync_taxonomy_slug',
 	'ghl_sync_delete_missing',
 	'ghl_sync_obey_changes',
 	'ghl_sync_exclude_draft',
@@ -40,6 +39,7 @@ foreach ( $options as $option ) {
 }
 
 delete_option( 'ghl_sync_cron_offset' );
+delete_option( 'ghl_sync_origin_migrated_v1' );
 
 delete_transient( 'ghl_connection_verified' );
 delete_transient( 'ghl_sync_github_release' );

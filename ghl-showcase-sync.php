@@ -3,7 +3,7 @@
  * Plugin Name:  LaunchLocal Showcase Sync
  * Plugin URI:   https://launchlocal.io
  * Description:  Syncs LaunchLocal Custom Object (Showcase) records to WordPress with SEO optimisation, taxonomy support, and two-way sync.
- * Version:      4.5.1
+ * Version:      4.5.2
  * Author:       LaunchLocal
  * Author URI:   https://launchlocal.io
  * Text Domain:  ghl-showcase-sync
@@ -17,7 +17,7 @@ namespace GHL\ShowcaseSync;
 
 if ( ! defined( 'ABSPATH' ) ) { exit; }
 
-define( 'GHL_SYNC_VERSION', '4.5.1' );
+define( 'GHL_SYNC_VERSION', '4.5.2' );
 define( 'GHL_SYNC_PATH',    plugin_dir_path( __FILE__ ) );
 define( 'GHL_SYNC_URL',     plugin_dir_url( __FILE__ ) );
 define( 'GHL_SYNC_SLUG',    'ghl-showcase-sync' );

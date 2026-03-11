@@ -38,6 +38,16 @@ Releases follow [Semantic Versioning](https://semver.org/). Each GitHub release 
 
 ## Changelog
 
+### 4.5.2
+**Code audit fixes — orphaned options, reserved meta key conflict.**
+
+**Fixed**
+* `ghl_sync_origin_migrated_v1` was written by the origin-migration routine but never cleaned up on uninstall. Added to `GithubUpdater::ALL_OPTIONS` and `uninstall.php` so it is fully removed when the plugin is deleted.
+* `ghl_sync_taxonomy_slug` was removed from plugin settings in v4.5.0 but remained listed in `uninstall.php`. Removed.
+* `update_post_meta( $post_id, 'category', ... )` in `sync_taxonomy()` used the reserved WordPress meta key `category` and stored a value that was never read back anywhere. The call served no purpose and risked conflicts with other plugins that read or write `category` post meta. Removed.
+
+---
+
 ### 4.5.1
 **Back-sync reliability — batch completeness, duplicate prevention, and cron back-sync.**
 

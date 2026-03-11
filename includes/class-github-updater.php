@@ -29,6 +29,7 @@ final class GithubUpdater {
 		'ghl_sync_schema_key',
 		'ghl_sync_cron_schedule',
 		'ghl_sync_cron_offset',
+		'ghl_sync_origin_migrated_v1',
 		'ghl_sync_batch_size',
 		'ghl_sync_debug',
 		'ghl_sync_publisher_id',

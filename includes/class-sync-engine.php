@@ -753,7 +753,6 @@ class SyncEngine {
 		}
 
 		wp_set_object_terms( $post_id, $term_ids, $tax_slug );
-		update_post_meta( $post_id, 'category', implode( ',', $term_ids ) );
 	}
 
 	// ── URL Extraction ─────────────────────────────────────────────────────────
