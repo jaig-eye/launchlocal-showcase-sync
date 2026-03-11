@@ -38,6 +38,23 @@ Releases follow [Semantic Versioning](https://semver.org/). Each GitHub release 
 
 ## Changelog
 
+### 4.5.1
+**Back-sync reliability — batch completeness, duplicate prevention, and cron back-sync.**
+
+**Fixed**
+* Back-sync batch `has_more` logic was based on the pre-batch backlog count, so a batch of exactly N posts (where N = batch_size) always returned `has_more: false` — even if some posts failed and remained in the backlog. `has_more` is now computed from the actual post-batch count, so partial batches correctly trigger the next run.
+* GHL record created but ID not saved to WordPress: when GHL's response didn't include the ID in the expected shape, the fallback title search fired immediately — before GHL's eventual-consistency index caught up — and found nothing. A 0.8 s delay is now inserted before the fallback search, giving GHL time to index the new record.
+* Added `$result['records'][0]['id']` as a fallback ID response path to cover additional GHL API response shapes.
+* Back-sync batches now run a pre-flight dedup check against the cached GHL record list before creating. If a record with the same title already exists in GHL (from a previous partial push where the ID was never saved back), the post is linked to that existing record instead of creating a duplicate.
+* `ghl_sync_cron_offset` and `ghl_scheduled_back_sync` were not cleared on uninstall/wipe. Both are now removed by `wipe_plugin_data()` and `uninstall.php`.
+* Removed stale `ghl_sync_taxonomy_slug` option from `GithubUpdater::ALL_OPTIONS` (option was removed in 4.5.0).
+
+**Added**
+* Back-sync cron (`ghl_scheduled_back_sync`): fires on the same user-configured schedule as the forward sync (offset +30 s to avoid API contention). Processes one batch of backlog posts per fire; the backlog shrinks naturally across fires with no offset tracking needed. Silently exits when there is nothing to push.
+* Progress bar for back-sync now shows a "Done" label with final counts and snaps to 100% on completion, regardless of how many posts errored.
+
+---
+
 ### 4.5.0
 **Fixes & hardening across sync engine, taxonomy, and settings.**
 

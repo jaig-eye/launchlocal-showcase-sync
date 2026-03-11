@@ -3,7 +3,7 @@
  * Plugin Name:  LaunchLocal Showcase Sync
  * Plugin URI:   https://launchlocal.io
  * Description:  Syncs LaunchLocal Custom Object (Showcase) records to WordPress with SEO optimisation, taxonomy support, and two-way sync.
- * Version:      4.5.0
+ * Version:      4.5.1
  * Author:       LaunchLocal
  * Author URI:   https://launchlocal.io
  * Text Domain:  ghl-showcase-sync
@@ -17,7 +17,7 @@ namespace GHL\ShowcaseSync;
 
 if ( ! defined( 'ABSPATH' ) ) { exit; }
 
-define( 'GHL_SYNC_VERSION', '4.5.0' );
+define( 'GHL_SYNC_VERSION', '4.5.1' );
 define( 'GHL_SYNC_PATH',    plugin_dir_path( __FILE__ ) );
 define( 'GHL_SYNC_URL',     plugin_dir_url( __FILE__ ) );
 define( 'GHL_SYNC_SLUG',    'ghl-showcase-sync' );
@@ -78,13 +78,16 @@ final class Plugin {
 		// User search AJAX (for publisher dropdown).
 		add_action( 'wp_ajax_ghl_search_users',   [ $this, 'ajax_search_users'   ] );
 
-		add_action( 'ghl_scheduled_sync', [ SyncEngine::class, 'run_cron' ] );
+		// Cron: forward sync (GHL → WP).
+		add_action( 'ghl_scheduled_sync',      [ SyncEngine::class,     'run_cron' ] );
+		// Cron: back-sync (WP → GHL) — fires on the same schedule, 30 s offset.
+		add_action( 'ghl_scheduled_back_sync', [ BackSyncEngine::class, 'run_cron' ] );
 
 		// One-time origin migration — stamps _ghl_origin on existing untagged posts.
 		add_action( 'init', [ SyncEngine::class, 'maybe_migrate_origins' ] );
 
-		// Self-healing cron: reschedule if the event was cleared without deactivation.
-		// Runs on admin_init only — cheap option-cache read, no frontend overhead.
+		// Self-healing cron: reschedule both events if cleared without deactivation.
+		// Reads from the autoloaded 'cron' option — no extra DB query.
 		add_action( 'init', [ CronManager::class, 'maybe_reschedule' ] );
 
 		register_activation_hook(   __FILE__, [ CronManager::class, 'activate'   ] );

@@ -28,10 +28,10 @@ final class GithubUpdater {
 		'ghl_sync_location_id',
 		'ghl_sync_schema_key',
 		'ghl_sync_cron_schedule',
+		'ghl_sync_cron_offset',
 		'ghl_sync_batch_size',
 		'ghl_sync_debug',
 		'ghl_sync_publisher_id',
-		'ghl_sync_taxonomy_slug',
 		'ghl_sync_delete_missing',
 		'ghl_sync_obey_changes',
 		'ghl_sync_exclude_draft',
@@ -196,6 +196,7 @@ final class GithubUpdater {
 		delete_transient( self::CACHE_KEY );
 
 		wp_clear_scheduled_hook( 'ghl_scheduled_sync' );
+		wp_clear_scheduled_hook( 'ghl_scheduled_back_sync' );
 	}
 
 	// ── Update transient injection ─────────────────────────────────────────────

@@ -35,6 +35,27 @@ class BackSyncEngine {
 	}
 
 	/**
+	 * Cron entry point — push one batch of backlog posts per scheduled fire.
+	 *
+	 * Uses the same global batch_size setting as the forward sync. Falls back to 5
+	 * if not configured. Because each successful push saves the GHL ID to the post,
+	 * the backlog shrinks naturally across fires with no offset tracking needed.
+	 * Silently exits if there are no backlog posts or credentials are missing.
+	 */
+	public static function run_cron(): void {
+		$schema_key = (string) get_option( 'ghl_sync_schema_key', '' );
+		if ( empty( $schema_key ) ) return;
+
+		$backlog = self::get_backlog_posts_raw();
+		if ( empty( $backlog ) ) return; // nothing to do
+
+		$batch_size = (int) get_option( 'ghl_sync_batch_size', 0 );
+		if ( $batch_size <= 0 ) $batch_size = 5;
+
+		self::run_backlog_batch( $batch_size );
+	}
+
+	/**
 	 * Push the next slice of backlog posts to GHL.
 	 *
 	 * There is NO offset parameter. Because each successful push saves the GHL ID
@@ -54,7 +75,7 @@ class BackSyncEngine {
 
 		// Use the raw query (no stale-ID purge) during batch runs so we don't
 		// hammer the API with an extra get_records() call every batch.
-		$all_remaining = self::get_backlog_posts_raw();
+		$all_remaining   = self::get_backlog_posts_raw();
 		$total_remaining = count( $all_remaining );
 
 		// Slice from the front. Posts successfully pushed in a previous batch will
@@ -68,8 +89,7 @@ class BackSyncEngine {
 			'items'          => [],
 			'total_remaining'=> $total_remaining,
 			'batch_size'     => $batch_size,
-			// has_more: true when there are more posts beyond what we just processed.
-			'has_more'       => $batch_size > 0 && $total_remaining > $batch_size,
+			'has_more'       => false, // resolved after processing
 		];
 
 		foreach ( $posts as $post ) {
@@ -82,6 +102,16 @@ class BackSyncEngine {
 				$summary['items'][]  = [ 'post_id' => $post->ID, 'title' => $post->post_title, 'status' => 'created', 'ghl_id' => $result ];
 			}
 		}
+
+		// Recount after processing: successfully pushed posts are no longer in the backlog.
+		$new_remaining = count( self::get_backlog_posts_raw() );
+		$made_progress = ( $total_remaining - $new_remaining ) > 0;
+
+		// Continue batching only when batching is enabled, posts still remain, AND we
+		// made forward progress this batch. The progress guard prevents infinite loops
+		// when every post in a batch errors (stuck records don't halt the whole queue).
+		$summary['has_more']        = $batch_size > 0 && $new_remaining > 0 && $made_progress;
+		$summary['total_remaining'] = $new_remaining; // post-batch count for accurate UI progress
 
 		self::write_log( $summary );
 		return $summary;
@@ -245,50 +275,77 @@ class BackSyncEngine {
 			$result = $api->update_record( $existing_ghl_id, $properties );
 			if ( is_wp_error( $result ) ) return $result;
 			return $existing_ghl_id;
-		} else {
-			$result = $api->create_record( $properties );
-			if ( is_wp_error( $result ) ) return $result;
+		}
 
-			// GHL APIs return the new ID in various shapes — try every known path.
-			$new_ghl_id = $result['record']['id']
-				?? $result['id']
-				?? $result['object']['id']
-				?? $result['data']['id']
-				?? $result['data']['record']['id']
-				?? '';
+		// ── Pre-flight dedup check ─────────────────────────────────────────────
+		// Before creating, scan the cached GHL records for a title match.
+		// This catches the failure mode where a previous back-sync push created the GHL
+		// record but failed to save the ID back to WordPress (e.g. unexpected response
+		// shape, timeout after creation). Without this check, every subsequent batch
+		// would create a second GHL record for the same WP post.
+		$cached_records = $api->get_records();
+		if ( ! is_wp_error( $cached_records ) ) {
+			$needle = strtolower( trim( $post->post_title ) );
+			foreach ( array_reverse( $cached_records ) as $rec ) {
+				$rec_title = strtolower( trim( (string) ( $rec['properties']['title'] ?? '' ) ) );
+				if ( $rec_title === $needle && ! empty( $rec['id'] ) ) {
+					// Record already exists in GHL — link it instead of creating a duplicate.
+					$linked_id = $rec['id'];
+					self::stamp_ghl_meta( $post->ID, $linked_id );
+					return $linked_id;
+				}
+			}
+		}
 
-			// If the response still has no ID, bust the cache and search live records
-			// to find the just-created entry by title match (prevents infinite re-create).
-			if ( ! $new_ghl_id ) {
-				$api->bust_cache();
-				$live_records = $api->get_records();
-				if ( ! is_wp_error( $live_records ) ) {
-					$needle = strtolower( trim( $post->post_title ) );
-					foreach ( array_reverse( $live_records ) as $rec ) {
-						$rec_title = strtolower( trim( (string) ( $rec['properties']['title'] ?? '' ) ) );
-						if ( $rec_title === $needle && ! empty( $rec['id'] ) ) {
-							$new_ghl_id = $rec['id'];
-							break;
-						}
+		// ── Create new record ──────────────────────────────────────────────────
+		$result = $api->create_record( $properties );
+		if ( is_wp_error( $result ) ) return $result;
+
+		// GHL APIs return the new ID in various response shapes — try every known path.
+		$new_ghl_id = $result['record']['id']
+			?? $result['id']
+			?? $result['object']['id']
+			?? $result['data']['id']
+			?? $result['data']['record']['id']
+			?? $result['records'][0]['id']
+			?? '';
+
+		// If the response has no ID, GHL's index may not have caught up yet.
+		// Wait briefly then retry the title search against fresh live records.
+		if ( ! $new_ghl_id ) {
+			usleep( 800_000 ); // 0.8 s — enough for GHL's eventual-consistency index
+			$api->bust_cache();
+			$live_records = $api->get_records();
+			if ( ! is_wp_error( $live_records ) ) {
+				$needle = strtolower( trim( $post->post_title ) );
+				foreach ( array_reverse( $live_records ) as $rec ) {
+					$rec_title = strtolower( trim( (string) ( $rec['properties']['title'] ?? '' ) ) );
+					if ( $rec_title === $needle && ! empty( $rec['id'] ) ) {
+						$new_ghl_id = $rec['id'];
+						break;
 					}
 				}
 			}
+		}
 
-			if ( ! $new_ghl_id ) {
-				return new \WP_Error( 'missing_id', 'GHL created the record but did not return an ID. Raw response: ' . substr( wp_json_encode( $result ), 0, 400 ) );
-			}
+		if ( ! $new_ghl_id ) {
+			return new \WP_Error( 'missing_id', 'GHL created the record but did not return an ID. Raw response: ' . substr( wp_json_encode( $result ), 0, 400 ) );
+		}
 
-			// Store GHL ID back on the post so future syncs link correctly.
-			update_post_meta( $post->ID, self::GHL_ID_META, sanitize_text_field( $new_ghl_id ) );
-			update_post_meta( $post->ID, '_ghl_back_synced_at', gmdate( 'c' ) );
-			// Stamp synced_at so the forward sync doesn't immediately flag this post as needing an update.
-			update_post_meta( $post->ID, '_ghl_synced_at', gmdate( 'c' ) );
-			// Track origin so it shows correctly in records lists.
-			if ( ! get_post_meta( $post->ID, '_ghl_origin', true ) ) {
-				update_post_meta( $post->ID, '_ghl_origin', 'wordpress' );
-			}
+		self::stamp_ghl_meta( $post->ID, $new_ghl_id );
+		return $new_ghl_id;
+	}
 
-			return $new_ghl_id;
+	/**
+	 * Save GHL linkage meta onto a WP post after a successful back-sync push.
+	 */
+	private static function stamp_ghl_meta( int $post_id, string $ghl_id ): void {
+		update_post_meta( $post_id, self::GHL_ID_META, sanitize_text_field( $ghl_id ) );
+		update_post_meta( $post_id, '_ghl_back_synced_at', gmdate( 'c' ) );
+		// Stamp synced_at so the forward sync doesn't immediately flag this post as needing an update.
+		update_post_meta( $post_id, '_ghl_synced_at', gmdate( 'c' ) );
+		if ( ! get_post_meta( $post_id, '_ghl_origin', true ) ) {
+			update_post_meta( $post_id, '_ghl_origin', 'wordpress' );
 		}
 	}
 

@@ -334,13 +334,16 @@
         var allItems     = [];
         var allErrors    = [];
         var totalCreated = 0;
-        var grandTotal   = 0;
+        var grandTotal   = 0;  // set on first response, stays fixed
         var processed    = 0;
 
-        function updateProgress() {
-            var pct = grandTotal > 0 ? Math.round((processed / grandTotal) * 100) : 0;
+        function updateProgress( done ) {
+            var pct = done ? 100 : ( grandTotal > 0 ? Math.min(99, Math.round((processed / grandTotal) * 100)) : 0 );
             $('#back-sync-progress-bar').css('width', pct + '%');
-            $('#back-sync-progress-label').text('Uploading ' + processed + ' of ' + grandTotal + ' records…');
+            var label = done
+                ? 'Done — ' + processed + ' pushed, ' + allErrors.length + ' error(s).'
+                : 'Uploading ' + processed + ' of ' + grandTotal + ' records…';
+            $('#back-sync-progress-label').text(label);
         }
 
         function renderFinalResult() {
@@ -383,24 +386,30 @@
             ajax('ghl_run_back_sync', { batch_size: batchSize }, function(data) {
                 var batchItems = data.items || [];
 
-                // On first response, learn the total so we can show progress.
-                if (!grandTotal && data.total_remaining) {
-                    grandTotal = data.total_remaining;
+                // On first response, set the initial total for the progress bar.
+                // total_remaining is the post-batch count after the first call, but since
+                // we haven't processed anything yet on first call, it equals the full backlog.
+                if (!grandTotal) {
+                    // total_remaining (post-batch) + items processed in this batch = initial total.
+                    grandTotal = (data.total_remaining || 0) + (batchItems.length || 0);
                 }
 
                 totalCreated += (data.created || 0);
                 allErrors     = allErrors.concat(data.errors || []);
                 allItems      = allItems.concat(batchItems);
                 processed    += batchItems.filter(function(i){ return i.status !== 'error'; }).length;
-                updateProgress();
 
                 if (data.has_more) {
-                    // Short pause before next batch.
+                    updateProgress(false);
+                    // Short pause before next batch — lets GHL's index settle.
                     setTimeout(runBatch, 700);
                 } else {
-                    $btn.prop('disabled', false).html(backSyncBtnHtml);
-                    $('#back-sync-result-content').html(renderFinalResult());
-                    loadWpPosts();
+                    updateProgress(true);
+                    setTimeout(function() {
+                        $btn.prop('disabled', false).html(backSyncBtnHtml);
+                        $('#back-sync-result-content').html(renderFinalResult());
+                        loadWpPosts();
+                    }, 400);
                 }
             }, function(msg) {
                 $btn.prop('disabled', false).html(backSyncBtnHtml);

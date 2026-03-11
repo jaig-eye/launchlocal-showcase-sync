@@ -39,7 +39,10 @@ foreach ( $options as $option ) {
 	delete_option( $option );
 }
 
+delete_option( 'ghl_sync_cron_offset' );
+
 delete_transient( 'ghl_connection_verified' );
 delete_transient( 'ghl_sync_github_release' );
 
 wp_clear_scheduled_hook( 'ghl_scheduled_sync' );
+wp_clear_scheduled_hook( 'ghl_scheduled_back_sync' );
